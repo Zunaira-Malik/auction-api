@@ -36,12 +36,6 @@ export class BidsController {
     });
   }
 
-  @Get('my')
-  @UseGuards(JwtAuthGuard)
-  getMyBids(@CurrentUser() user: User) {
-    return this.bidsService.getUserBids(user.id);
-  }
-
   @Get('auction/:auctionId')
   getAuctionBids(@Param('auctionId') auctionId: string) {
     return this.bidsService.getAuctionBids(auctionId);

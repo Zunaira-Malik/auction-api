@@ -136,24 +136,4 @@ export class BidsService {
       },
     });
   }
-
-  async getUserBids(userId: string): Promise<Bid[]> {
-    return this.prisma.bid.findMany({
-      where: { userId },
-      include: {
-        auction: {
-          select: {
-            id: true,
-            title: true,
-            currentPrice: true,
-            status: true,
-            endDate: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-  }
 }
