@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: auction-api-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: auction_api_user
+      POSTGRES_PASSWORD: auction_api_password
+      POSTGRES_DB: auction_api_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
