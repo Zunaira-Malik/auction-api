@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { ApiResponse } from '../interfaces/api-response.interface';
+
+export interface ApiResponse<T> {
+  success: boolean;
+  message: string;
+  data: T;
+}
 
 @Injectable()
 export class TransformInterceptor<T>
@@ -20,11 +25,28 @@ export class TransformInterceptor<T>
     const method = request.method;
     const url = request.url;
 
-    // Define success messages based on endpoint
     const messages = {
+      // Auth endpoints
       'POST /api/auth/login': 'User logged in successfully',
       'POST /api/auth/register': 'User registered successfully',
       'GET /api/users/me': 'Current user retrieved successfully',
+
+      // Auction endpoints
+      'POST /api/auctions': 'Auction created successfully',
+      'GET /api/auctions': 'Auctions retrieved successfully',
+      'GET /api/auctions/:id': 'Auction retrieved successfully',
+      'PATCH /api/auctions/:id': 'Auction updated successfully',
+      'DELETE /api/auctions/:id': 'Auction deleted successfully',
+      'PATCH /api/auctions/:id/status': 'Auction status updated successfully',
+
+      // Bid endpoints
+      'POST /api/bids': 'Bid placed successfully',
+      'GET /api/bids': 'Bids retrieved successfully',
+      'GET /api/bids/my': 'Your bids retrieved successfully',
+      'GET /api/bids/auction/:auctionId': 'Auction bids retrieved successfully',
+      'GET /api/bids/:id': 'Bid retrieved successfully',
+
+      // Fallback messages
       GET: 'Data retrieved successfully',
       POST: 'Data created successfully',
       PUT: 'Data updated successfully',
@@ -32,17 +54,25 @@ export class TransformInterceptor<T>
       DELETE: 'Data deleted successfully',
     };
 
-    const message =
-      messages[`${method} ${url}`] ||
-      messages[method] ||
-      'Operation completed successfully';
+    // Try to match the exact endpoint first
+    let message = messages[`${method} ${url}`];
+
+    // If no exact match, try to match with parameters
+    if (!message) {
+      const urlPattern = url.replace(/\/[^/]+/g, '/:id');
+      message = messages[`${method} ${urlPattern}`];
+    }
+
+    // If still no match, use the default message for the HTTP method
+    if (!message) {
+      message = messages[method];
+    }
 
     return next.handle().pipe(
       map((data) => ({
         success: true,
         message,
         data,
-        timestamp: new Date().toISOString(),
       })),
     );
   }

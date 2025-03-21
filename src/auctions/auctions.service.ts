@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Auction, AuctionStatus, Prisma } from '@prisma/client';
@@ -97,7 +98,12 @@ export class AuctionsService {
 
     return this.prisma.auction.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        version: {
+          increment: 1,
+        },
+      },
     });
   }
 
@@ -138,9 +144,26 @@ export class AuctionsService {
       throw new BadRequestException('Cannot complete auction before end date');
     }
 
-    return this.prisma.auction.update({
-      where: { id },
-      data: { status },
+    // Use optimistic locking to prevent concurrent updates
+    const updatedAuction = await this.prisma.auction.update({
+      where: {
+        id,
+        version: auction.version,
+      },
+      data: {
+        status,
+        version: {
+          increment: 1,
+        },
+      },
     });
+
+    if (!updatedAuction) {
+      throw new ConflictException(
+        'Auction was updated by another user. Please try again.',
+      );
+    }
+
+    return updatedAuction;
   }
 }
