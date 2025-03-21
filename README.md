@@ -10,9 +10,10 @@ A NestJS-based RESTful API with WebSocket support for real-time auction updates.
 4. [API Endpoints](#api-endpoints)
 5. [WebSocket Events](#websocket-events)
 6. [Database Schema](#database-schema)
-7. [Environment Variables](#environment-variables)
-8. [Development](#development)
-9. [Production](#production)
+7. [Race Condition Handling](#race-condition-handling)
+8. [Environment Variables](#environment-variables)
+9. [Development](#development)
+10. [Production](#production)
 
 ## Overview
 
@@ -298,6 +299,136 @@ model Bid {
 }
 ```
 
+## Race Condition Handling
+
+The API implements several mechanisms to handle race conditions and ensure data consistency:
+
+### Optimistic Locking for Auctions
+
+The `Auction` model includes a `version` field that is incremented on each update. This implements optimistic locking to prevent concurrent updates:
+
+```prisma
+model Auction {
+  // ... other fields ...
+  version      Int       @default(1)
+  // ... other fields ...
+}
+```
+
+When updating an auction, the system:
+
+1. Checks if the current version matches the expected version
+2. Throws a `ConflictException` if versions don't match
+3. Increments the version on successful updates
+
+### Transaction-based Bid Creation
+
+Bid creation is handled within a database transaction to ensure atomicity:
+
+```typescript
+// Example of transaction handling in bid creation
+await prisma.$transaction(async (tx) => {
+  // 1. Check auction status and current price
+  const auction = await tx.auction.findUnique({
+    where: { id: data.auctionId },
+    include: { bids: { orderBy: { amount: 'desc' }, take: 1 } },
+  });
+
+  // 2. Validate bid amount
+  if (bidAmount <= currentPrice) {
+    throw new BadRequestException(
+      'Bid amount must be higher than current price',
+    );
+  }
+
+  // 3. Create bid and update auction price atomically
+  const [bid] = await Promise.all([
+    tx.bid.create({
+      data: {
+        amount: bidAmount,
+        auctionId: data.auctionId,
+        userId: user.id,
+      },
+    }),
+    tx.auction.update({
+      where: { id: data.auctionId },
+      data: {
+        currentPrice: bidAmount,
+        version: { increment: 1 },
+      },
+    }),
+  ]);
+
+  return bid;
+});
+```
+
+### Concurrent Update Handling
+
+The system handles various concurrent scenarios:
+
+1. **Multiple Users Bidding Simultaneously**
+
+   - Only one bid will succeed if two users bid at the same time
+   - Other bids receive a conflict error and must retry
+   - Auction price is updated atomically
+
+2. **Auction Status Updates During Bidding**
+
+   - Bids placed on completed auctions fail with appropriate error
+   - Status updates are version-controlled to prevent race conditions
+
+3. **Concurrent Auction Updates**
+   - Only one update succeeds if multiple users update simultaneously
+   - Other updates receive a conflict error
+
+### Example Usage
+
+```typescript
+// Handling bid placement with retries
+async function placeBid(auctionId: string, amount: number) {
+  const maxRetries = 3;
+  let retries = 0;
+
+  while (retries < maxRetries) {
+    try {
+      const bid = await bidsService.create({
+        auctionId,
+        amount,
+      });
+      return bid;
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        retries++;
+        if (retries === maxRetries) {
+          throw new Error('Failed to place bid after multiple attempts');
+        }
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
+// Handling auction updates with version control
+async function updateAuction(auctionId: string, data: UpdateAuctionDto) {
+  try {
+    const auction = await auctionsService.update(auctionId, data);
+    return auction;
+  } catch (error) {
+    if (error instanceof ConflictException) {
+      // Handle concurrent update
+      throw new Error(
+        'Auction was updated by another user. Please refresh and try again.',
+      );
+    }
+    throw error;
+  }
+}
+```
+
 ## Environment Variables
 
 | Variable          | Description               | Default                                           |
@@ -382,7 +513,3 @@ docker-compose -f docker-compose.prod.yml up --build
 4. Use secure headers
 5. Implement proper error handling
 6. Regular security audits
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
