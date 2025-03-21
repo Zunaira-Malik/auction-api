@@ -7,6 +7,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuctionsModule } from './auctions/auctions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { BidsModule } from './bids/bids.module';
+import { WebSocketModule } from './websocket/websocket.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { BidsModule } from './bids/bids.module';
     UsersModule,
     AuctionsModule,
     BidsModule,
+    WebSocketModule,
   ],
   controllers: [AppController],
   providers: [AppService],

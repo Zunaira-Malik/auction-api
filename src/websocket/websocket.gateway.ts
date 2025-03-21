@@ -8,8 +8,6 @@ import {
 import { Server, Socket } from 'socket.io';
 import { UseGuards } from '@nestjs/common';
 import { WsJwtAuthGuard } from '../auth/guards/ws-jwt-auth.guard';
-import { AuctionsService } from './auctions.service';
-import { BidsService } from '../bids/bids.service';
 import { Auction, Bid, User } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 
@@ -28,7 +26,7 @@ type AuctionWithHighestBid = Auction & {
   },
 })
 @UseGuards(WsJwtAuthGuard)
-export class AuctionsGateway
+export class AuctionWebSocketGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
@@ -36,40 +34,17 @@ export class AuctionsGateway
 
   private connectedClients: Map<string, Set<string>> = new Map(); // auctionId -> Set of socketIds
 
-  constructor(
-    private readonly auctionsService: AuctionsService,
-    private readonly bidsService: BidsService,
-    private readonly configService: ConfigService,
-  ) {
-    // CORS will be configured after server initialization
-  }
-
-  afterInit(server: Server) {
-    // Set up CORS after server is initialized
-    const origin =
-      this.configService.get<string>('NODE_ENV') === 'development'
-        ? this.configService.get<string>('APP_LOCALHOST_URL')
-        : this.configService.get<string>('APP_FRONTEND_URL');
-
-    // Socket.io correctly applies CORS at this level
-    if (this.server && this.server.engine && this.server.engine.opts) {
-      this.server.engine.opts.cors = { origin };
-    }
-  }
+  constructor(private readonly configService: ConfigService) {}
 
   async handleConnection(client: Socket) {
     // The user is already authenticated by WsJwtAuthGuard
-    const userId = client.data?.user?.sub;
-    console.log(
-      `Client connected: ${client.id} (User: ${userId || 'unknown'})`,
-    );
+    const userId = client.data.user.sub;
+    console.log(`Client connected: ${client.id} (User: ${userId})`);
   }
 
   handleDisconnect(client: Socket) {
-    const userId = client.data?.user?.sub;
-    console.log(
-      `Client disconnected: ${client.id} (User: ${userId || 'unknown'})`,
-    );
+    const userId = client.data.user.sub;
+    console.log(`Client disconnected: ${client.id} (User: ${userId})`);
     // Remove client from all auction rooms
     this.connectedClients.forEach((clients, auctionId) => {
       clients.delete(client.id);
@@ -92,16 +67,6 @@ export class AuctionsGateway
     if (clients) {
       clients.add(client.id);
     }
-
-    // Send current auction state to the new client
-    const auction = (await this.auctionsService.findOne(
-      auctionId,
-    )) as AuctionWithHighestBid;
-    client.emit('auctionUpdate', {
-      auctionId,
-      currentPrice: auction.currentPrice,
-      highestBid: auction.bids[0] || null,
-    });
   }
 
   @SubscribeMessage('leaveAuction')
@@ -120,14 +85,14 @@ export class AuctionsGateway
   }
 
   // Method to broadcast auction updates to all connected clients
-  async broadcastAuctionUpdate(auctionId: string) {
-    const auction = (await this.auctionsService.findOne(
-      auctionId,
-    )) as AuctionWithHighestBid;
+  async broadcastAuctionUpdate(
+    auctionId: string,
+    data: { currentPrice: number; highestBid: any },
+  ) {
     this.server.to(`auction:${auctionId}`).emit('auctionUpdate', {
       auctionId,
-      currentPrice: auction.currentPrice,
-      highestBid: auction.bids[0] || null,
+      currentPrice: data.currentPrice,
+      highestBid: data.highestBid,
     });
   }
 }

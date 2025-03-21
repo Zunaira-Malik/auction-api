@@ -6,13 +6,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Bid, AuctionStatus } from '@prisma/client';
-import { AuctionsGateway } from '../auctions/auctions.gateway';
+import { AuctionWebSocketGateway } from '../websocket/websocket.gateway';
 
 @Injectable()
 export class BidsService {
   constructor(
     private prisma: PrismaService,
-    private auctionsGateway: AuctionsGateway,
+    private auctionsGateway: AuctionWebSocketGateway,
   ) {}
 
   async create(data: {
@@ -102,7 +102,10 @@ export class BidsService {
     });
 
     // Broadcast the update to all connected clients
-    await this.auctionsGateway.broadcastAuctionUpdate(data.auctionId);
+    await this.auctionsGateway.broadcastAuctionUpdate(data.auctionId, {
+      currentPrice: bid.amount,
+      highestBid: bid,
+    });
 
     return bid;
   }
