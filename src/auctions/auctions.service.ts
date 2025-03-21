@@ -46,14 +46,9 @@ export class AuctionsService {
     const auction = await this.prisma.auction.findUnique({
       where: { id },
       include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
         bids: {
+          orderBy: { amount: 'desc' },
+          take: 1,
           include: {
             user: {
               select: {
@@ -62,9 +57,6 @@ export class AuctionsService {
                 email: true,
               },
             },
-          },
-          orderBy: {
-            amount: 'desc',
           },
         },
       },

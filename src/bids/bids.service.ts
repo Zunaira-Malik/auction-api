@@ -6,10 +6,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Bid, AuctionStatus } from '@prisma/client';
+import { AuctionsGateway } from '../auctions/auctions.gateway';
 
 @Injectable()
 export class BidsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auctionsGateway: AuctionsGateway,
+  ) {}
 
   async create(data: {
     amount: number;
@@ -17,7 +21,7 @@ export class BidsService {
     userId: string;
   }): Promise<Bid> {
     // Use a transaction to ensure atomicity
-    return this.prisma.$transaction(async (tx) => {
+    const bid = await this.prisma.$transaction(async (tx) => {
       // Get the auction with its current version and highest bid
       const auction = await tx.auction.findUnique({
         where: { id: data.auctionId },
@@ -96,6 +100,11 @@ export class BidsService {
         },
       });
     });
+
+    // Broadcast the update to all connected clients
+    await this.auctionsGateway.broadcastAuctionUpdate(data.auctionId);
+
+    return bid;
   }
 
   async findAll(params: {
